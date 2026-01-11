@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # 1. POSTGRES/POSTGIS DATABASE SERVICE
+  db:
+    image: postgis/postgis:16-3.4 # Use a robust, official image with PostGIS enabled
+    container_name: nodeloc_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}       # Read from your .env file
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    volumes:
+      # This volume persists the data
+      - postgres_data:/var/lib/postgresql/data
+      # NEW: This volume mounts the schema for automatic execution by PostGIS image
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql 
+    ports:
+      # Expose port 5432 to your host machine for external access (e.g., psql, pgAdmin)
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  # 3. NODELOC API SERVICE
+  api:
+    # Build from the Dockerfile in the current directory
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: nodeloc_api
+    restart: always
+    environment:
+      # Pass environment variables needed by server.js (DB connection info)
+      DB_HOST: db                   # CRITICAL: Use the service name ('db') instead of 'localhost'
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_DATABASE: ${DB_DATABASE}
+      SERVER_PORT: 3000
+    ports:
+      # Expose the API port to your host machine
+      - "3000:3000"
+    depends_on:
+      db: # CRITICAL CHANGE: Depend on the DB service directly
+        condition: service_healthy
+
+# Docker Volumes for persistent data
+volumes:
+  postgres_data:
